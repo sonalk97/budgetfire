@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BudgetFIRE — Personal Finance Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- Mobile hamburger -->
+<button class="hamburger" aria-label="Menu">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+</button>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    BudgetFIRE
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="#" data-page="dashboard" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a></li>
+    <li><a href="#" data-page="accounts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      Accounts
+    </a></li>
+    <li><a href="#" data-page="transactions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="10"/></svg>
+      Transactions
+    </a></li>
+    <li><a href="#" data-page="budget">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v9h-9"/></svg>
+      Budget
+    </a></li>
+    <li><a href="#" data-page="fire">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 3 5 5 5 10a5 5 0 0 1-10 0c0-5 4-7 5-10z"/></svg>
+      FIRE Calc
+    </a></li>
+  </ul>
+  <div class="sidebar-footer">All data stored locally in your browser.</div>
+</aside>
+
+<!-- Main Content -->
+<main class="main">
+
+  <!-- Dashboard Page -->
+  <div id="page-dashboard" class="page active">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <span style="color:var(--text-muted);font-size:0.9rem" id="dash-month"></span>
+    </div>
+
+    <div class="cards-grid">
+      <div class="card">
+        <div class="card-label">Net Worth</div>
+        <div class="card-value positive" id="dash-net-worth">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Monthly Income</div>
+        <div class="card-value" id="dash-income" style="color:var(--green)">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Monthly Expenses</div>
+        <div class="card-value" id="dash-expenses" style="color:var(--red)">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Savings Rate</div>
+        <div class="card-value" id="dash-savings-rate" style="color:var(--accent)">0.0%</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="card">
+        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:12px">Recent Transactions</h3>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
+            <tbody id="dash-recent-txns"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:12px">Accounts</h3>
+        <div id="dash-accounts"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Accounts Page -->
+  <div id="page-accounts" class="page">
+    <div class="page-header">
+      <h1>Accounts</h1>
+      <button class="btn btn-primary" onclick="Accounts.openModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Add Account
+      </button>
+    </div>
+    <div id="accounts-list"></div>
+  </div>
+
+  <!-- Transactions Page -->
+  <div id="page-transactions" class="page">
+    <div class="page-header">
+      <h1>Transactions</h1>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-primary" onclick="Transactions.openModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add Transaction
+        </button>
+      </div>
+    </div>
+    <div id="transactions-list"></div>
+  </div>
+
+  <!-- Budget Page -->
+  <div id="page-budget" class="page">
+    <div class="page-header"><h1>Budget</h1></div>
+    <div class="page-content"></div>
+  </div>
+
+  <!-- FIRE Page -->
+  <div id="page-fire" class="page">
+    <div class="page-header"><h1>FIRE Calculator</h1></div>
+    <div class="page-content"></div>
+  </div>
+
+</main>
+
+<!-- Account Modal -->
+<div class="modal-overlay" id="modal-account">
+  <div class="modal">
+    <h2>Account</h2>
+    <form id="form-account" onsubmit="event.preventDefault(); Accounts.save();">
+      <input type="hidden" name="account-id">
+      <div class="form-group">
+        <label for="account-name">Account Name</label>
+        <input type="text" id="account-name" name="account-name" placeholder="e.g., Chase Checking" required>
+      </div>
+      <div class="form-group">
+        <label for="account-type">Type</label>
+        <select id="account-type" name="account-type">
+          <option value="checking">Checking</option>
+          <option value="savings">Savings</option>
+          <option value="credit">Credit Card</option>
+          <option value="investment">Investment</option>
+          <option value="crypto">Crypto</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="account-institution">Institution (optional)</label>
+        <input type="text" id="account-institution" name="account-institution" placeholder="e.g., Chase, Fidelity, Coinbase">
+      </div>
+      <div class="form-group">
+        <label for="account-balance">Current Balance</label>
+        <input type="number" id="account-balance" name="account-balance" step="0.01" value="0">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="Accounts.closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Transaction Modal -->
+<div class="modal-overlay" id="modal-transaction">
+  <div class="modal">
+    <h2>Add Transaction</h2>
+    <form id="form-transaction" onsubmit="event.preventDefault(); Transactions.save();">
+      <div class="form-group">
+        <label for="txn-date">Date</label>
+        <input type="date" id="txn-date" name="txn-date" required>
+      </div>
+      <div class="form-group">
+        <label for="txn-description">Description</label>
+        <input type="text" id="txn-description" name="txn-description" placeholder="e.g., Starbucks Coffee" required>
+      </div>
+      <div class="form-group">
+        <label for="txn-amount">Amount</label>
+        <input type="number" id="txn-amount" name="txn-amount" step="0.01" placeholder="0.00" required>
+      </div>
+      <div class="form-group">
+        <label for="txn-type">Type</label>
+        <select id="txn-type" name="txn-type">
+          <option value="expense">Expense</option>
+          <option value="income">Income</option>
+          <option value="transfer">Transfer</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="txn-category">Category</label>
+        <select id="txn-category" name="txn-category">
+          <option value="Housing">Housing</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Groceries">Groceries</option>
+          <option value="Dining">Dining</option>
+          <option value="Transportation">Transportation</option>
+          <option value="Subscriptions">Subscriptions</option>
+          <option value="Shopping">Shopping</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Entertainment">Entertainment</option>
+          <option value="Income">Income</option>
+          <option value="Transfers">Transfers</option>
+          <option value="Investments">Investments</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="txn-account">Account</label>
+        <select id="txn-account" name="txn-account"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="Transactions.closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Close modals on overlay click -->
+<script>
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.classList.remove('open');
+    });
+  });
+</script>
+
+<script src="js/utils.js"></script>
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
