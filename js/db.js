@@ -179,8 +179,9 @@ const DB = {
     for (const t of txns) {
       if (t.type === 'income') {
         income += Math.abs(t.amount);
+      } else if (t.category === 'Investments' || t.category === 'Transfers') {
+        // Investments and transfers are NOT spending — skip from expenses
       } else if (t.type === 'expense' || (t.type === 'transfer' && t.category === 'Housing')) {
-        // Count Housing-categorized transfers (rent) as expenses
         expenses += Math.abs(t.amount);
         const cat = t.category || 'Other';
         byCategory[cat] = (byCategory[cat] || 0) + Math.abs(t.amount);

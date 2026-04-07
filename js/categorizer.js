@@ -33,11 +33,11 @@ const Categorizer = {
     // Income
     { keywords: ['payroll', 'direct dep', 'direct deposit', 'salary', 'wage', 'ach credit', 'employer', 'paycheck', 'tax refund', 'irs treas', 'interest paid', 'dividend', 'bonus', 'commission', 'freelance', 'venmo from', 'zelle from', 'cashapp from', 'grosvenor', 'gcm'], category: 'Income' },
 
+    // Investments (must be BEFORE Transfers so "fidelity transfer" matches here first)
+    { keywords: ['fidelity', 'schwab', 'vanguard', 'robinhood', 'e*trade', 'etrade', 'td ameritrade', 'merrill', 'morgan stanley', 'wealthfront', 'betterment', 'acorns', 'stash', 'coinbase', 'binance', 'kraken', 'gemini', 'crypto', 'bitcoin', 'ethereum', 'stock', 'mutual fund', '401k', 'ira', 'roth', 'brokerage', 'investment', 'dividend reinv'], category: 'Investments' },
+
     // Transfers
     { keywords: ['transfer', 'xfer', 'ach', 'wire', 'zelle', 'venmo', 'cashapp', 'cash app', 'paypal', 'internal', 'savings transfer', 'checking transfer', 'payment thank', 'autopay', 'online payment', 'bill pay'], category: 'Transfers' },
-
-    // Investments
-    { keywords: ['fidelity', 'schwab', 'vanguard', 'robinhood', 'e*trade', 'etrade', 'td ameritrade', 'merrill', 'morgan stanley', 'wealthfront', 'betterment', 'acorns', 'stash', 'coinbase', 'binance', 'kraken', 'gemini', 'crypto', 'bitcoin', 'ethereum', 'stock', 'mutual fund', '401k', 'ira', 'roth', 'brokerage', 'investment', 'dividend reinv'], category: 'Investments' },
   ],
 
   // Categorize a single transaction
