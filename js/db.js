@@ -175,20 +175,55 @@ const DB = {
   async getMonthSummary(monthKey) {
     const txns = await this.getTransactionsByMonth(monthKey);
     let income = 0, expenses = 0;
+    const byCategory = {};
     for (const t of txns) {
-      if (t.type === 'income') income += Math.abs(t.amount);
-      else if (t.type === 'expense') expenses += Math.abs(t.amount);
+      if (t.type === 'income') {
+        income += Math.abs(t.amount);
+      } else if (t.type === 'expense') {
+        expenses += Math.abs(t.amount);
+        const cat = t.category || 'Other';
+        byCategory[cat] = (byCategory[cat] || 0) + Math.abs(t.amount);
+      }
     }
     const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0;
-    return { income, expenses, net: income - expenses, savingsRate, transactionCount: txns.length };
+    return { income, expenses, net: income - expenses, savingsRate, transactionCount: txns.length, byCategory };
   },
 
   async getNetWorth() {
     const accounts = await this.getAccounts();
     let total = 0;
     for (const a of accounts) {
-      total += (a.balance || 0);
+      // Credit card balances are debts — subtract from net worth
+      if (a.type === 'credit') {
+        total -= Math.abs(a.balance || 0);
+      } else {
+        total += (a.balance || 0);
+      }
     }
     return total;
+  },
+
+  // Get all monthly summaries across all time
+  async getAllMonthSummaries() {
+    const txns = await this.getTransactions();
+    const months = {};
+    for (const t of txns) {
+      const mk = t.monthKey;
+      if (!months[mk]) months[mk] = { income: 0, expenses: 0, byCategory: {} };
+      if (t.type === 'income') {
+        months[mk].income += Math.abs(t.amount);
+      } else if (t.type === 'expense') {
+        months[mk].expenses += Math.abs(t.amount);
+        const cat = t.category || 'Other';
+        months[mk].byCategory[cat] = (months[mk].byCategory[cat] || 0) + Math.abs(t.amount);
+      }
+    }
+    // Add derived fields
+    for (const [mk, m] of Object.entries(months)) {
+      m.monthKey = mk;
+      m.net = m.income - m.expenses;
+      m.savingsRate = m.income > 0 ? ((m.income - m.expenses) / m.income) * 100 : 0;
+    }
+    return months;
   }
 };

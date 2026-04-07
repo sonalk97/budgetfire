@@ -517,25 +517,451 @@ const Upload = {
   }
 };
 
-// === Budget (placeholder for Phase 4) ===
+// === Budget / Category Spend Tracker ===
 const Budget = {
+  CHART_COLORS: ['#6366f1','#22c55e','#ef4444','#eab308','#3b82f6','#a855f7','#f97316','#14b8a6','#ec4899','#84cc16','#06b6d4','#f43f5e','#8b5cf6'],
+
   async render() {
-    document.getElementById('page-budget').querySelector('.page-content').innerHTML = `
-      <div class="empty-state">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 6v6l4 2"/></svg>
-        <p>Budget tracking coming soon. Add transactions first to see spending insights.</p>
-      </div>`;
+    const container = document.getElementById('page-budget').querySelector('.page-content');
+    const allMonths = await DB.getAllMonthSummaries();
+    const monthKeys = Object.keys(allMonths).sort();
+
+    if (monthKeys.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No transaction data yet. Upload statements to see spending breakdowns.</p></div>';
+      return;
+    }
+
+    // Aggregate totals across all time
+    const aggByCategory = {};
+    let aggTotal = 0;
+    for (const mk of monthKeys) {
+      const m = allMonths[mk];
+      for (const [cat, amt] of Object.entries(m.byCategory)) {
+        aggByCategory[cat] = (aggByCategory[cat] || 0) + amt;
+        aggTotal += amt;
+      }
+    }
+
+    // Sort categories by total spend
+    const sortedCats = Object.entries(aggByCategory).sort((a, b) => b[1] - a[1]);
+    const expenseCategories = CATEGORIES.filter(c => c !== 'Income' && c !== 'Transfers' && c !== 'Investments');
+
+    // Build monthly table data
+    const currentMK = Utils.getCurrentMonthKey();
+
+    container.innerHTML = `
+      <h3 style="margin-bottom:16px;font-size:1rem">Aggregate Spend Breakdown (All Time)</h3>
+      <div class="cards-grid" style="margin-bottom:28px">
+        ${sortedCats.map(([cat, amt], i) => {
+          const pct = aggTotal > 0 ? (amt / aggTotal * 100).toFixed(1) : 0;
+          const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
+          return `<div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span class="card-label" style="margin:0">${cat}</span>
+              <span style="font-size:0.85rem;font-weight:600;color:${color}">${pct}%</span>
+            </div>
+            <div style="background:var(--bg);border-radius:6px;height:8px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:${color};border-radius:6px;transition:width .3s"></div>
+            </div>
+            <div style="font-size:0.85rem;margin-top:6px;color:var(--text-muted)">${Utils.formatCurrency(amt)}</div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <h3 style="margin-bottom:16px;font-size:1rem">Monthly Breakdown</h3>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              ${expenseCategories.map(c => `<th style="text-align:right">${c}</th>`).join('')}
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${monthKeys.slice().reverse().map(mk => {
+              const m = allMonths[mk];
+              const total = m.expenses;
+              return `<tr>
+                <td style="font-weight:600">${Utils.formatMonth(mk + '-01')}</td>
+                ${expenseCategories.map(c => {
+                  const amt = m.byCategory[c] || 0;
+                  const pct = total > 0 ? (amt / total * 100).toFixed(1) : 0;
+                  return `<td style="text-align:right;font-size:0.82rem">
+                    ${amt > 0 ? `${Utils.formatCurrency(amt)}<br><span style="color:var(--text-muted)">${pct}%</span>` : '—'}
+                  </td>`;
+                }).join('')}
+                <td style="text-align:right;font-weight:600">${Utils.formatCurrency(total)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin:28px 0 16px;font-size:1rem">Aggregate % by Category</h3>
+      <div class="card" style="padding:24px">
+        <canvas id="chart-category-pie" height="300"></canvas>
+      </div>
+    `;
+
+    // Render pie chart
+    this._renderPieChart(sortedCats, aggTotal);
+  },
+
+  _renderPieChart(sortedCats, total) {
+    const canvas = document.getElementById('chart-category-pie');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    if (this._chart) this._chart.destroy();
+    this._chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: sortedCats.map(([c]) => c),
+        datasets: [{
+          data: sortedCats.map(([, a]) => a),
+          backgroundColor: this.CHART_COLORS.slice(0, sortedCats.length),
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right', labels: { color: '#e4e4e7', padding: 12, font: { size: 12 } } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const pct = total > 0 ? (ctx.raw / total * 100).toFixed(1) : 0;
+                return ` ${ctx.label}: ${Utils.formatCurrency(ctx.raw)} (${pct}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
   }
 };
 
-// === FIRE Calculator (placeholder for Phase 6) ===
+// === FIRE Calculator ===
 const Fire = {
+  defaults: {
+    currentAge: 29,
+    fireAge: 40,
+    returnRate: 7,
+    inflationRate: 3,
+    safeWithdrawalRate: 4,
+    expenseGrowth: 7.5 // midpoint of 5-10% increase from current spending
+  },
+
   async render() {
-    document.getElementById('page-fire').querySelector('.page-content').innerHTML = `
-      <div class="empty-state">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 6v6l4 2"/></svg>
-        <p>FIRE Calculator coming in a later phase. We'll build this after budgeting is in place.</p>
-      </div>`;
+    const container = document.getElementById('page-fire').querySelector('.page-content');
+    const allMonths = await DB.getAllMonthSummaries();
+    const monthKeys = Object.keys(allMonths).sort();
+    const netWorth = await DB.getNetWorth();
+
+    // Load saved settings or defaults
+    const settings = (await DB.getSetting('fire')) || this.defaults;
+
+    // Derive spending from data
+    const { monthlyExpenses, monthlyIncome, bonusIncome, regularIncome } = this._deriveFromData(allMonths, monthKeys);
+
+    // Calculate annualized values
+    const annualExpenses = monthlyExpenses * 12;
+    const annualExpensesRetirement = annualExpenses * (1 + settings.expenseGrowth / 100);
+    const annualRegularIncome = regularIncome * 12; // semi-monthly pay × 2 paychecks × 12
+    const annualBonusIncome = bonusIncome; // already annual
+    const totalAnnualIncome = annualRegularIncome + annualBonusIncome;
+    const annualSavings = totalAnnualIncome - annualExpenses;
+    const monthlySavings = annualSavings / 12;
+
+    // FIRE number
+    const fireNumber = annualExpensesRetirement / (settings.safeWithdrawalRate / 100);
+    const realReturn = (settings.returnRate - settings.inflationRate) / 100;
+
+    // Years to FIRE (using future value of annuity formula)
+    let yearsToFire = 0;
+    let projected = netWorth;
+    while (projected < fireNumber && yearsToFire < 100) {
+      projected = projected * (1 + realReturn) + annualSavings;
+      yearsToFire++;
+    }
+
+    const fireYear = new Date().getFullYear() + yearsToFire;
+    const fireDate = new Date(fireYear, new Date().getMonth(), 1);
+    const fireAgeCalc = settings.currentAge + yearsToFire;
+
+    // Build projection data for chart
+    const projectionYears = Math.max(yearsToFire + 5, 15);
+    const projLabels = [];
+    const projData = [];
+    const fireLine = [];
+    let pv = netWorth;
+    for (let y = 0; y <= projectionYears; y++) {
+      const yr = new Date().getFullYear() + y;
+      projLabels.push(yr.toString());
+      projData.push(Math.round(pv));
+      fireLine.push(Math.round(fireNumber));
+      pv = pv * (1 + realReturn) + annualSavings;
+    }
+
+    // Historical net worth (approximate from monthly data)
+    const histLabels = [];
+    const histData = [];
+    let runningNW = netWorth;
+    // Walk backwards from current month to estimate past net worth
+    for (let i = monthKeys.length - 1; i >= 0; i--) {
+      const mk = monthKeys[i];
+      const m = allMonths[mk];
+      histLabels.unshift(mk);
+      histData.unshift(Math.round(runningNW));
+      runningNW -= m.net; // subtract that month's net to estimate previous month
+    }
+
+    container.innerHTML = `
+      <div class="cards-grid">
+        <div class="card">
+          <div class="card-label">FIRE Number</div>
+          <div class="card-value" style="color:var(--accent)">${Utils.formatCurrency(fireNumber)}</div>
+          <div class="card-sub">${annualExpensesRetirement > annualExpenses ? 'Based on projected retirement expenses (+' + settings.expenseGrowth + '%)' : 'Based on current annual expenses'}</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Current Net Worth</div>
+          <div class="card-value ${netWorth >= 0 ? 'positive' : 'negative'}">${Utils.formatCurrency(netWorth)}</div>
+          <div class="card-sub">${((netWorth / fireNumber) * 100).toFixed(1)}% of FIRE goal</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Years to FIRE</div>
+          <div class="card-value" style="color:var(--yellow)">${yearsToFire}</div>
+          <div class="card-sub">Target: ${fireYear} (age ${fireAgeCalc})</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Monthly Savings</div>
+          <div class="card-value positive">${Utils.formatCurrency(monthlySavings)}</div>
+          <div class="card-sub">Savings rate: ${totalAnnualIncome > 0 ? (annualSavings / totalAnnualIncome * 100).toFixed(1) : 0}%</div>
+        </div>
+      </div>
+
+      <div class="cards-grid" style="grid-template-columns: 1fr 1fr 1fr">
+        <div class="card">
+          <div class="card-label">Annual Expenses (Current)</div>
+          <div class="card-value" style="font-size:1.2rem;color:var(--red)">${Utils.formatCurrency(annualExpenses)}</div>
+          <div class="card-sub">Derived from ${monthKeys.length} months of data</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Annual Regular Income</div>
+          <div class="card-value" style="font-size:1.2rem;color:var(--green)">${Utils.formatCurrency(annualRegularIncome)}</div>
+          <div class="card-sub">Semi-monthly pay (2x/month)</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Annual Bonus (Annualized)</div>
+          <div class="card-value" style="font-size:1.2rem;color:var(--green)">${Utils.formatCurrency(annualBonusIncome)}</div>
+          <div class="card-sub">From March 2026 bonus, annualized</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;padding:24px">
+        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:16px">Net Worth: Historical & Projected to FIRE</h3>
+        <canvas id="chart-fire" height="120"></canvas>
+      </div>
+
+      <div class="card" style="margin-top:20px;padding:20px">
+        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:16px">FIRE Settings</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
+          <div class="form-group">
+            <label>Current Age</label>
+            <input type="number" id="fire-age" value="${settings.currentAge}" onchange="Fire.saveSettings()">
+          </div>
+          <div class="form-group">
+            <label>Target FIRE Age</label>
+            <input type="number" id="fire-target-age" value="${settings.fireAge}" onchange="Fire.saveSettings()">
+          </div>
+          <div class="form-group">
+            <label>Expected Return (%)</label>
+            <input type="number" id="fire-return" value="${settings.returnRate}" step="0.5" onchange="Fire.saveSettings()">
+          </div>
+          <div class="form-group">
+            <label>Inflation Rate (%)</label>
+            <input type="number" id="fire-inflation" value="${settings.inflationRate}" step="0.5" onchange="Fire.saveSettings()">
+          </div>
+          <div class="form-group">
+            <label>Safe Withdrawal Rate (%)</label>
+            <input type="number" id="fire-swr" value="${settings.safeWithdrawalRate}" step="0.25" onchange="Fire.saveSettings()">
+          </div>
+          <div class="form-group">
+            <label>Expense Growth for Retirement (%)</label>
+            <input type="number" id="fire-expense-growth" value="${settings.expenseGrowth}" step="0.5" onchange="Fire.saveSettings()">
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;padding:20px;background:var(--surface)">
+        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:8px">FIRE Countdown</h3>
+        <div id="fire-countdown" style="font-size:2rem;font-weight:700;color:var(--accent);text-align:center;padding:16px"></div>
+      </div>
+    `;
+
+    this._renderChart(histLabels, histData, projLabels, projData, fireLine);
+    this._startCountdown(fireDate);
+  },
+
+  _deriveFromData(allMonths, monthKeys) {
+    if (monthKeys.length === 0) {
+      return { monthlyExpenses: 4000, monthlyIncome: 6000, bonusIncome: 0, regularIncome: 6000 };
+    }
+
+    // Calculate average monthly expenses (excluding transfers/investments)
+    let totalExpenses = 0;
+    let expenseMonths = 0;
+
+    // Separate regular income from bonus income
+    // March 2026 has a bonus — identify it as an outlier
+    let totalRegularIncome = 0;
+    let regularIncomeMonths = 0;
+    let bonusAmount = 0;
+
+    for (const mk of monthKeys) {
+      const m = allMonths[mk];
+      totalExpenses += m.expenses;
+      expenseMonths++;
+
+      if (mk === '2026-03') {
+        // March 2026 has bonus — find the median income of other months to isolate it
+        // We'll handle this after the loop
+      }
+    }
+
+    // Calculate median income for non-March months to find regular pay
+    const nonBonusIncomes = [];
+    for (const mk of monthKeys) {
+      if (mk === '2026-03') continue;
+      const m = allMonths[mk];
+      if (m.income > 0) nonBonusIncomes.push(m.income);
+    }
+    nonBonusIncomes.sort((a, b) => a - b);
+    const medianIncome = nonBonusIncomes.length > 0
+      ? nonBonusIncomes[Math.floor(nonBonusIncomes.length / 2)]
+      : 0;
+
+    // Regular monthly income = median (represents 2 semi-monthly paychecks)
+    const regularMonthly = medianIncome;
+
+    // March 2026 bonus = March income minus regular monthly income
+    const marchIncome = allMonths['2026-03'] ? allMonths['2026-03'].income : 0;
+    bonusAmount = Math.max(0, marchIncome - regularMonthly);
+
+    const monthlyExpenses = expenseMonths > 0 ? totalExpenses / expenseMonths : 0;
+
+    return {
+      monthlyExpenses,
+      monthlyIncome: regularMonthly,
+      bonusIncome: bonusAmount, // This IS the annual bonus (one-time in March)
+      regularIncome: regularMonthly
+    };
+  },
+
+  _renderChart(histLabels, histData, projLabels, projData, fireLine) {
+    const canvas = document.getElementById('chart-fire');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    // Combine historical + projected
+    const allLabels = [...histLabels, ...projLabels];
+    const historicalLine = [...histData, ...new Array(projLabels.length).fill(null)];
+    const projectedLine = [...new Array(histLabels.length).fill(null), ...projData];
+    // Overlap at the junction
+    if (histData.length > 0 && projData.length > 0) {
+      projectedLine[histLabels.length - 1] = histData[histData.length - 1];
+    }
+    const fireTarget = [...fireLine.slice(0, histLabels.length).map(() => fireLine[0]), ...fireLine];
+
+    if (this._chart) this._chart.destroy();
+    this._chart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: allLabels,
+        datasets: [
+          {
+            label: 'Historical Net Worth',
+            data: historicalLine,
+            borderColor: '#6366f1',
+            backgroundColor: '#6366f120',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+            borderWidth: 2
+          },
+          {
+            label: 'Projected Net Worth',
+            data: projectedLine,
+            borderColor: '#22c55e',
+            backgroundColor: '#22c55e10',
+            borderDash: [6, 3],
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2
+          },
+          {
+            label: 'FIRE Target',
+            data: fireTarget.slice(0, allLabels.length),
+            borderColor: '#ef4444',
+            borderDash: [10, 5],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { ticks: { color: '#8b8fa3', maxTicksLimit: 15 }, grid: { color: '#2a2e3d' } },
+          y: {
+            ticks: { color: '#8b8fa3', callback: v => Utils.formatCurrency(v) },
+            grid: { color: '#2a2e3d' }
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#e4e4e7', padding: 16 } },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${Utils.formatCurrency(ctx.raw)}`
+            }
+          }
+        }
+      }
+    });
+  },
+
+  _countdownInterval: null,
+  _startCountdown(fireDate) {
+    if (this._countdownInterval) clearInterval(this._countdownInterval);
+    const el = document.getElementById('fire-countdown');
+    const update = () => {
+      const now = new Date();
+      const diff = fireDate - now;
+      if (diff <= 0) { el.textContent = 'You\'ve reached FIRE!'; return; }
+      const days = Math.floor(diff / 86400000);
+      const years = Math.floor(days / 365);
+      const remDays = days % 365;
+      const months = Math.floor(remDays / 30);
+      const d = remDays % 30;
+      el.textContent = `${years}y ${months}m ${d}d to Financial Independence`;
+    };
+    update();
+    this._countdownInterval = setInterval(update, 60000);
+  },
+
+  async saveSettings() {
+    const settings = {
+      currentAge: parseInt(document.getElementById('fire-age').value) || 29,
+      fireAge: parseInt(document.getElementById('fire-target-age').value) || 40,
+      returnRate: parseFloat(document.getElementById('fire-return').value) || 7,
+      inflationRate: parseFloat(document.getElementById('fire-inflation').value) || 3,
+      safeWithdrawalRate: parseFloat(document.getElementById('fire-swr').value) || 4,
+      expenseGrowth: parseFloat(document.getElementById('fire-expense-growth').value) || 7.5
+    };
+    await DB.saveSetting('fire', settings);
+    this.render();
   }
 };
 
