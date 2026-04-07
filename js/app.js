@@ -544,7 +544,7 @@ const Upload = {
 
 // === Budget / Category Spend Tracker ===
 const Budget = {
-  CHART_COLORS: ['#a78bfa','#4ade80','#f87171','#fbbf24','#60a5fa','#c084fc','#fb923c','#2dd4bf','#f472b6','#a3e635','#22d3ee','#fb7185','#818cf8'],
+  CHART_COLORS: ['#6d5cff','#16a34a','#dc2626','#ca8a04','#2563eb','#7c3aed','#ea580c','#0d9488','#db2777','#65a30d','#0891b2','#e11d48','#4f46e5'],
 
   async render() {
     const container = document.getElementById('page-budget').querySelector('.page-content');
@@ -666,7 +666,7 @@ const Budget = {
       options: {
         responsive: true,
         plugins: {
-          legend: { display: false },
+          legend: { display: false, labels: { color: '#4a4a4a' } },
           tooltip: {
             callbacks: {
               label: (ctx) => {
@@ -928,8 +928,8 @@ const Fire = {
           {
             label: 'Historical',
             data: historicalLine,
-            borderColor: '#a78bfa',
-            backgroundColor: '#a78bfa10',
+            borderColor: '#6d5cff',
+            backgroundColor: '#6d5cff10',
             fill: true,
             tension: 0.35,
             pointRadius: 1.5,
@@ -938,8 +938,8 @@ const Fire = {
           {
             label: 'Projected',
             data: projectedLine,
-            borderColor: '#4ade80',
-            backgroundColor: '#4ade8008',
+            borderColor: '#16a34a',
+            backgroundColor: '#16a34a08',
             borderDash: [5, 3],
             fill: true,
             tension: 0.35,
@@ -949,7 +949,7 @@ const Fire = {
           {
             label: 'FIRE Target',
             data: fireTarget.slice(0, allLabels.length),
-            borderColor: '#f8717140',
+            borderColor: '#dc262640',
             borderDash: [8, 4],
             borderWidth: 1,
             pointRadius: 0,
@@ -961,20 +961,20 @@ const Fire = {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          x: { ticks: { color: '#71717a', font: { size: 11 }, maxTicksLimit: 15 }, grid: { color: '#1e1e21' } },
+          x: { ticks: { color: '#8a8780', font: { size: 11 }, maxTicksLimit: 15 }, grid: { color: '#eceae5' } },
           y: {
-            ticks: { color: '#71717a', font: { size: 11 }, callback: v => Utils.formatCurrency(v) },
-            grid: { color: '#1e1e21' }
+            ticks: { color: '#8a8780', font: { size: 11 }, callback: v => Utils.formatCurrency(v) },
+            grid: { color: '#eceae5' }
           }
         },
         plugins: {
-          legend: { labels: { color: '#a1a1aa', padding: 16, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
+          legend: { labels: { color: '#4a4a4a', padding: 16, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
-            backgroundColor: '#18181b',
-            borderColor: '#27272a',
+            backgroundColor: '#ffffff',
+            borderColor: '#e5e2db',
             borderWidth: 1,
-            titleColor: '#fafafa',
-            bodyColor: '#a1a1aa',
+            titleColor: '#1a1a1a',
+            bodyColor: '#4a4a4a',
             padding: 10,
             callbacks: {
               label: ctx => ` ${ctx.dataset.label}: ${Utils.formatCurrency(ctx.raw)}`
