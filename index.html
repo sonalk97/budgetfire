@@ -109,6 +109,10 @@
     <div class="page-header">
       <h1>Transactions</h1>
       <div style="display:flex;gap:10px">
+        <button class="btn btn-secondary" onclick="Upload.openModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Upload Statement
+        </button>
         <button class="btn btn-primary" onclick="Transactions.openModal()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
           Add Transaction
@@ -223,6 +227,84 @@
   </div>
 </div>
 
+<!-- Upload Statement Modal -->
+<div class="modal-overlay" id="modal-upload">
+  <div class="modal" style="max-width:640px">
+    <h2>Upload Statement</h2>
+
+    <!-- Step 1: Select account & file -->
+    <div id="upload-step1">
+      <div class="form-group">
+        <label for="upload-account">Account</label>
+        <select id="upload-account"></select>
+      </div>
+      <div class="drop-zone" id="upload-dropzone">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p>Drag & drop a CSV file here</p>
+        <p style="font-size:0.8rem;color:var(--text-muted)">or click to browse</p>
+        <input type="file" id="upload-file" accept=".csv" style="display:none">
+      </div>
+      <div id="upload-file-info" style="display:none;margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:0.85rem">
+        <span id="upload-filename"></span>
+        <span id="upload-format" style="float:right;color:var(--accent)"></span>
+      </div>
+    </div>
+
+    <!-- Step 2: Preview parsed transactions -->
+    <div id="upload-step2" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span id="upload-summary" style="font-size:0.9rem;color:var(--text-muted)"></span>
+        <button class="btn btn-sm btn-secondary" onclick="Upload.reset()">Choose Different File</button>
+      </div>
+      <div class="upload-preview-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th><th>Category</th></tr></thead>
+          <tbody id="upload-preview"></tbody>
+        </table>
+      </div>
+      <div id="upload-dupes" style="display:none;margin-top:10px;padding:10px;background:var(--yellow-bg);border-radius:8px;font-size:0.85rem;color:var(--yellow)"></div>
+    </div>
+
+    <!-- Generic column mapper (fallback) -->
+    <div id="upload-step-generic" style="display:none">
+      <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:16px">We couldn't auto-detect the format. Please map the columns:</p>
+      <div class="form-group">
+        <label for="map-date">Date Column</label>
+        <select id="map-date"></select>
+      </div>
+      <div class="form-group">
+        <label for="map-description">Description Column</label>
+        <select id="map-description"></select>
+      </div>
+      <div class="form-group">
+        <label for="map-amount">Amount Column</label>
+        <select id="map-amount"></select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="form-group" style="flex:1">
+          <label for="map-debit">Debit Column (optional)</label>
+          <select id="map-debit"><option value="">— none —</option></select>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label for="map-credit">Credit Column (optional)</label>
+          <select id="map-credit"><option value="">— none —</option></select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="Upload.reset()">Back</button>
+        <button class="btn btn-primary" onclick="Upload.applyGenericMapping()">Map Columns</button>
+      </div>
+    </div>
+
+    <div class="modal-actions" id="upload-actions">
+      <button type="button" class="btn btn-secondary" onclick="Upload.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="upload-import-btn" onclick="Upload.importTransactions()" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
 <!-- Close modals on overlay click -->
 <script>
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -232,8 +314,10 @@
   });
 </script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/db.js"></script>
+<script src="js/parser.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -300,6 +300,31 @@ tr:hover { background: var(--surface-hover); }
   margin-bottom: 16px;
 }
 
+/* === Upload / Drop Zone === */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.drop-zone:hover {
+  border-color: var(--accent);
+  background: var(--accent)08;
+}
+.drop-zone p { margin-top: 8px; }
+
+.upload-preview-wrap {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.upload-preview-wrap table { font-size: 0.82rem; }
+.upload-preview-wrap td { padding: 8px 12px; }
+.upload-preview-wrap th { padding: 8px 12px; }
+
 /* === Mobile hamburger === */
 .hamburger {
   display: none;

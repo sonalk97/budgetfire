@@ -273,6 +273,215 @@ const Transactions = {
   }
 };
 
+// === Upload ===
+const Upload = {
+  parsedTxns: [],
+  parsedResult: null,
+
+  async openModal() {
+    const accounts = await DB.getAccounts();
+    const sel = document.getElementById('upload-account');
+    if (accounts.length === 0) {
+      alert('Please add an account first before uploading statements.');
+      App.navigate('accounts');
+      return;
+    }
+    sel.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name} (${a.type})</option>`).join('');
+    this.reset();
+    document.getElementById('modal-upload').classList.add('open');
+    this._bindDropZone();
+  },
+
+  closeModal() {
+    document.getElementById('modal-upload').classList.remove('open');
+    this.reset();
+  },
+
+  reset() {
+    this.parsedTxns = [];
+    this.parsedResult = null;
+    document.getElementById('upload-step1').style.display = '';
+    document.getElementById('upload-step2').style.display = 'none';
+    document.getElementById('upload-step-generic').style.display = 'none';
+    document.getElementById('upload-file-info').style.display = 'none';
+    document.getElementById('upload-import-btn').disabled = true;
+    document.getElementById('upload-file').value = '';
+    document.getElementById('upload-dupes').style.display = 'none';
+  },
+
+  _bindDropZone() {
+    const zone = document.getElementById('upload-dropzone');
+    const input = document.getElementById('upload-file');
+
+    // Only bind once
+    if (zone._bound) return;
+    zone._bound = true;
+
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--accent)'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.style.borderColor = '';
+      if (e.dataTransfer.files.length) this._handleFile(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', () => {
+      if (input.files.length) this._handleFile(input.files[0]);
+    });
+  },
+
+  async _handleFile(file) {
+    if (!file.name.endsWith('.csv')) {
+      alert('Please upload a CSV file.');
+      return;
+    }
+
+    document.getElementById('upload-filename').textContent = file.name;
+    document.getElementById('upload-file-info').style.display = '';
+
+    try {
+      const result = await Parser.parseCSV(file);
+      this.parsedResult = result;
+
+      if (result.format) {
+        document.getElementById('upload-format').textContent = 'Detected: ' + result.format.name;
+        const accountId = document.getElementById('upload-account').value;
+        this.parsedTxns = Parser.normalizeTransactions(result, accountId);
+        this._showPreview();
+      } else {
+        // Show generic column mapper
+        document.getElementById('upload-format').textContent = 'Unknown format';
+        this._showGenericMapper(result.headers);
+      }
+    } catch (err) {
+      alert('Error parsing CSV: ' + err.message);
+    }
+  },
+
+  _showPreview() {
+    document.getElementById('upload-step1').querySelector('.drop-zone').style.display = 'none';
+    document.getElementById('upload-step2').style.display = '';
+    document.getElementById('upload-step-generic').style.display = 'none';
+
+    const tbody = document.getElementById('upload-preview');
+    const preview = this.parsedTxns.slice(0, 15);
+
+    document.getElementById('upload-summary').textContent =
+      `${this.parsedTxns.length} transactions parsed` +
+      (this.parsedTxns.length > 15 ? ` (showing first 15)` : '');
+
+    tbody.innerHTML = preview.map(t => `
+      <tr>
+        <td>${Utils.formatDateShort(t.date)}</td>
+        <td>${t.description}</td>
+        <td class="${t.type === 'income' ? 'amount-positive' : 'amount-negative'}">
+          ${t.type === 'income' ? '+' : '-'}${Utils.formatCurrency(t.amount)}
+        </td>
+        <td>${t.type}</td>
+        <td>${t.category || 'Other'}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('upload-import-btn').disabled = false;
+    document.getElementById('upload-import-btn').textContent = `Import ${this.parsedTxns.length} Transactions`;
+
+    // Check for duplicates
+    this._checkDuplicates();
+  },
+
+  async _checkDuplicates() {
+    const existing = await DB.getTransactions();
+    const existingHashes = new Set(existing.map(t => Parser.txnHash(t)));
+    const dupeCount = this.parsedTxns.filter(t => existingHashes.has(Parser.txnHash(t))).length;
+
+    if (dupeCount > 0) {
+      const el = document.getElementById('upload-dupes');
+      el.style.display = '';
+      el.textContent = `${dupeCount} potential duplicate(s) detected — these will be skipped on import.`;
+      // Filter out dupes
+      this.parsedTxns = this.parsedTxns.filter(t => !existingHashes.has(Parser.txnHash(t)));
+      const remaining = this.parsedTxns.length;
+      document.getElementById('upload-import-btn').textContent = `Import ${remaining} Transactions`;
+      if (remaining === 0) document.getElementById('upload-import-btn').disabled = true;
+    }
+  },
+
+  _showGenericMapper(headers) {
+    document.getElementById('upload-step1').querySelector('.drop-zone').style.display = 'none';
+    document.getElementById('upload-step-generic').style.display = '';
+    document.getElementById('upload-step2').style.display = 'none';
+
+    const opts = headers.map(h => `<option value="${h}">${h}</option>`).join('');
+    const optsWithNone = `<option value="">— none —</option>` + opts;
+
+    document.getElementById('map-date').innerHTML = opts;
+    document.getElementById('map-description').innerHTML = opts;
+    document.getElementById('map-amount').innerHTML = opts;
+    document.getElementById('map-debit').innerHTML = optsWithNone;
+    document.getElementById('map-credit').innerHTML = optsWithNone;
+
+    // Auto-select likely columns
+    for (const h of headers) {
+      const lc = h.toLowerCase();
+      if (lc.includes('date')) document.getElementById('map-date').value = h;
+      if (lc.includes('desc') || lc.includes('memo') || lc.includes('narr')) document.getElementById('map-description').value = h;
+      if (lc === 'amount') document.getElementById('map-amount').value = h;
+      if (lc.includes('debit')) document.getElementById('map-debit').value = h;
+      if (lc.includes('credit')) document.getElementById('map-credit').value = h;
+    }
+  },
+
+  applyGenericMapping() {
+    const dateCol = document.getElementById('map-date').value;
+    const descCol = document.getElementById('map-description').value;
+    const amountCol = document.getElementById('map-amount').value;
+    const debitCol = document.getElementById('map-debit').value;
+    const creditCol = document.getElementById('map-credit').value;
+    const accountId = document.getElementById('upload-account').value;
+
+    if (!dateCol || !descCol || (!amountCol && !debitCol)) {
+      alert('Please map at least Date, Description, and Amount (or Debit) columns.');
+      return;
+    }
+
+    this.parsedTxns = [];
+    for (const row of this.parsedResult.rawData) {
+      let amount, type;
+      if (debitCol && creditCol) {
+        const debit = Utils.parseAmount(row[debitCol]);
+        const credit = Utils.parseAmount(row[creditCol]);
+        amount = debit || credit;
+        type = credit > 0 ? 'income' : 'expense';
+      } else {
+        amount = Utils.parseAmount(row[amountCol]);
+        type = amount > 0 ? 'income' : 'expense';
+        amount = Math.abs(amount);
+      }
+
+      const date = Parser.normalizeDate(row[dateCol]);
+      const description = (row[descCol] || '').trim();
+      if (!date || !description || !amount) continue;
+
+      this.parsedTxns.push({ date, description, amount, type, category: 'Other', accountId });
+    }
+
+    this._showPreview();
+  },
+
+  async importTransactions() {
+    if (this.parsedTxns.length === 0) return;
+
+    const btn = document.getElementById('upload-import-btn');
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+
+    await DB.saveTransactions(this.parsedTxns);
+
+    this.closeModal();
+    await Transactions.render();
+  }
+};
+
 // === Budget (placeholder for Phase 4) ===
 const Budget = {
   async render() {
