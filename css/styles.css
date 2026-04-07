@@ -300,6 +300,21 @@ tr:hover { background: var(--surface-hover); }
   margin-bottom: 16px;
 }
 
+/* === Inline category select === */
+.cat-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+}
+.cat-select:hover { border-color: var(--accent); }
+.cat-select:focus { border-color: var(--accent); }
+
 /* === Upload / Drop Zone === */
 .drop-zone {
   border: 2px dashed var(--border);

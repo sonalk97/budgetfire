@@ -219,14 +219,25 @@ const Transactions = {
       return;
     }
 
-    container.innerHTML = `<div class="table-wrap"><table>
+    const catOptions = CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+    container.innerHTML = `
+      <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-sm btn-secondary" onclick="Transactions.recategorizeAll()">Auto-Categorize All</button>
+        <span style="color:var(--text-muted);font-size:0.82rem">${sorted.length} transactions</span>
+      </div>
+      <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Account</th><th>Amount</th><th></th></tr></thead>
       <tbody>${sorted.map(t => {
         const acct = accounts.find(a => a.id === t.accountId);
+        const selected = t.category || 'Other';
         return `<tr>
           <td>${Utils.formatDateShort(t.date)}</td>
           <td>${t.description}</td>
-          <td><span class="badge">${t.category || 'Uncategorized'}</span></td>
+          <td>
+            <select class="cat-select" onchange="Transactions.updateCategory('${t.id}', this.value, '${t.description.replace(/'/g, "\\'")}')">${
+              CATEGORIES.map(c => `<option value="${c}"${c === selected ? ' selected' : ''}>${c}</option>`).join('')
+            }</select>
+          </td>
           <td style="color:var(--text-muted)">${acct ? acct.name : '—'}</td>
           <td class="${t.type === 'income' ? 'amount-positive' : 'amount-negative'}">
             ${t.type === 'income' ? '+' : '-'}${Utils.formatCurrency(Math.abs(t.amount))}
@@ -263,6 +274,25 @@ const Transactions = {
     if (!txn.description || !txn.amount) return alert('Please fill in all fields.');
     await DB.saveTransaction(txn);
     this.closeModal();
+    this.render();
+  },
+
+  async updateCategory(id, newCategory, description) {
+    const txn = await DB.getTransaction(id);
+    if (txn) {
+      txn.category = newCategory;
+      txn._userCategorized = true;
+      await DB.saveTransaction(txn);
+      // Learn from user override
+      await Categorizer.learnFromOverride(description, newCategory);
+    }
+  },
+
+  async recategorizeAll() {
+    if (!confirm('Re-categorize all transactions using auto-detection? Manual overrides you\'ve set will be preserved.')) return;
+    const txns = await DB.getTransactions();
+    await Categorizer.categorizeAll(txns);
+    await DB.saveTransactions(txns);
     this.render();
   },
 
@@ -331,7 +361,10 @@ const Upload = {
   },
 
   async _handleFile(file) {
-    if (!file.name.endsWith('.csv')) {
+    const isCSV = file.name.toLowerCase().endsWith('.csv') ||
+                  file.type === 'text/csv' ||
+                  file.type === 'application/vnd.ms-excel';
+    if (!isCSV) {
       alert('Please upload a CSV file.');
       return;
     }
@@ -473,8 +506,10 @@ const Upload = {
 
     const btn = document.getElementById('upload-import-btn');
     btn.disabled = true;
-    btn.textContent = 'Importing...';
+    btn.textContent = 'Categorizing & importing...';
 
+    // Auto-categorize all transactions before saving
+    await Categorizer.categorizeAll(this.parsedTxns);
     await DB.saveTransactions(this.parsedTxns);
 
     this.closeModal();
