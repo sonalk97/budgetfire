@@ -64,27 +64,49 @@ const Dashboard = {
     const netWorth = await DB.getNetWorth();
     const accounts = await DB.getAccounts();
 
-    document.getElementById('dash-net-worth').textContent = Utils.formatCurrency(netWorth);
-    document.getElementById('dash-income').textContent = Utils.formatCurrency(summary.income);
-    document.getElementById('dash-expenses').textContent = Utils.formatCurrency(summary.expenses);
-    document.getElementById('dash-savings-rate').textContent = summary.savingsRate.toFixed(1) + '%';
+    // Use historical average for monthly income (semi-monthly pay: full month = 2 paychecks)
+    // Current month may be partial, so derive from completed months
+    const allMonths = await DB.getAllMonthSummaries();
+    const completedMonthKeys = Object.keys(allMonths).sort().filter(mk => mk !== monthKey);
+    let avgMonthlyIncome = summary.income;
+    let incomeLabel = 'this month so far';
+    if (completedMonthKeys.length > 0) {
+      // Use median of completed months to avoid bonus skew
+      const incomes = completedMonthKeys.map(mk => allMonths[mk].income).filter(i => i > 0).sort((a, b) => a - b);
+      if (incomes.length > 0) {
+        avgMonthlyIncome = incomes[Math.floor(incomes.length / 2)];
+        incomeLabel = 'typical monthly (2 paychecks)';
+      }
+    }
 
-    // Color code
+    const avgMonthlyExpenses = completedMonthKeys.length > 0
+      ? completedMonthKeys.reduce((s, mk) => s + allMonths[mk].expenses, 0) / completedMonthKeys.length
+      : summary.expenses;
+
+    const savingsRate = avgMonthlyIncome > 0 ? ((avgMonthlyIncome - avgMonthlyExpenses) / avgMonthlyIncome * 100) : 0;
+
+    document.getElementById('dash-net-worth').textContent = Utils.formatCurrency(netWorth);
+    document.getElementById('dash-income').textContent = Utils.formatCurrency(avgMonthlyIncome);
+    document.getElementById('dash-income-label').textContent = incomeLabel;
+    document.getElementById('dash-expenses').textContent = Utils.formatCurrency(avgMonthlyExpenses);
+    document.getElementById('dash-savings-rate').textContent = savingsRate.toFixed(1) + '%';
+
     const nwEl = document.getElementById('dash-net-worth');
     nwEl.className = 'card-value ' + (netWorth >= 0 ? 'positive' : 'negative');
 
     // Recent transactions
     const txns = await DB.getTransactionsByMonth(monthKey);
-    const sorted = txns.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+    const allTxns = txns.length > 0 ? txns : await DB.getTransactions();
+    const sorted = allTxns.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
     const tbody = document.getElementById('dash-recent-txns');
     if (sorted.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:24px">No transactions this month. Add accounts and upload statements to get started.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:24px">No transactions yet.</td></tr>';
     } else {
       tbody.innerHTML = sorted.map(t => `
         <tr>
           <td>${Utils.formatDateShort(t.date)}</td>
           <td>${t.description}</td>
-          <td><span class="badge">${t.category || 'Uncategorized'}</span></td>
+          <td><span class="badge">${t.category || 'Other'}</span></td>
           <td class="${t.type === 'income' ? 'amount-positive' : 'amount-negative'}">
             ${t.type === 'income' ? '+' : '-'}${Utils.formatCurrency(Math.abs(t.amount))}
           </td>
@@ -97,15 +119,18 @@ const Dashboard = {
     if (accounts.length === 0) {
       acctList.innerHTML = '<div class="empty-state"><p>No accounts yet</p><button class="btn btn-primary btn-sm" onclick="App.navigate(\'accounts\')">Add Account</button></div>';
     } else {
-      acctList.innerHTML = accounts.map(a => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div>
+      acctList.innerHTML = accounts.map(a => {
+        const isDebt = a.type === 'credit';
+        const displayBal = isDebt ? -Math.abs(a.balance || 0) : (a.balance || 0);
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle)">
+          <div style="display:flex;align-items:center;gap:8px">
             <span class="badge badge-${a.type}">${a.type}</span>
-            <span style="margin-left:8px">${a.name}</span>
+            <span style="font-size:0.82rem">${a.name}</span>
           </div>
-          <span style="font-weight:600">${Utils.formatCurrency(a.balance || 0)}</span>
-        </div>
-      `).join('');
+          <span style="font-weight:500;font-size:0.85rem;color:${displayBal >= 0 ? 'var(--text-secondary)' : 'var(--red)'}">${Utils.formatCurrency(displayBal)}</span>
+        </div>`;
+      }).join('');
     }
   }
 };
@@ -519,7 +544,7 @@ const Upload = {
 
 // === Budget / Category Spend Tracker ===
 const Budget = {
-  CHART_COLORS: ['#6366f1','#22c55e','#ef4444','#eab308','#3b82f6','#a855f7','#f97316','#14b8a6','#ec4899','#84cc16','#06b6d4','#f43f5e','#8b5cf6'],
+  CHART_COLORS: ['#a78bfa','#4ade80','#f87171','#fbbf24','#60a5fa','#c084fc','#fb923c','#2dd4bf','#f472b6','#a3e635','#22d3ee','#fb7185','#818cf8'],
 
   async render() {
     const container = document.getElementById('page-budget').querySelector('.page-content');
@@ -550,25 +575,45 @@ const Budget = {
     const currentMK = Utils.getCurrentMonthKey();
 
     container.innerHTML = `
-      <h3 style="margin-bottom:16px;font-size:1rem">Aggregate Spend Breakdown (All Time)</h3>
+      <div class="section-label">All-time spend by category</div>
       <div class="cards-grid" style="margin-bottom:28px">
         ${sortedCats.map(([cat, amt], i) => {
           const pct = aggTotal > 0 ? (amt / aggTotal * 100).toFixed(1) : 0;
           const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
           return `<div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <span class="card-label" style="margin:0">${cat}</span>
-              <span style="font-size:0.85rem;font-weight:600;color:${color}">${pct}%</span>
+              <span style="font-size:0.8rem;font-weight:600;color:${color}">${pct}%</span>
             </div>
-            <div style="background:var(--bg);border-radius:6px;height:8px;overflow:hidden">
-              <div style="width:${pct}%;height:100%;background:${color};border-radius:6px;transition:width .3s"></div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:${pct}%;background:${color}"></div>
             </div>
-            <div style="font-size:0.85rem;margin-top:6px;color:var(--text-muted)">${Utils.formatCurrency(amt)}</div>
+            <div style="font-size:0.8rem;margin-top:8px;color:var(--text-muted)">${Utils.formatCurrency(amt)}</div>
           </div>`;
         }).join('')}
       </div>
 
-      <h3 style="margin-bottom:16px;font-size:1rem">Monthly Breakdown</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
+        <div class="card" style="padding:24px">
+          <div class="section-label">Category distribution</div>
+          <canvas id="chart-category-pie" height="260"></canvas>
+        </div>
+        <div class="card" style="padding:24px;display:flex;flex-direction:column;gap:6px">
+          <div class="section-label">Top categories</div>
+          ${sortedCats.slice(0, 8).map(([cat, amt], i) => {
+            const pct = aggTotal > 0 ? (amt / aggTotal * 100).toFixed(1) : 0;
+            const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
+            return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+              <div style="width:8px;height:8px;border-radius:2px;background:${color};flex-shrink:0"></div>
+              <span style="flex:1;font-size:0.82rem;color:var(--text-secondary)">${cat}</span>
+              <span style="font-size:0.8rem;color:var(--text-muted)">${pct}%</span>
+              <span style="font-size:0.82rem;font-weight:500;min-width:80px;text-align:right">${Utils.formatCurrency(amt)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="section-label">Monthly breakdown</div>
       <div class="table-wrap" style="overflow-x:auto">
         <table>
           <thead>
@@ -583,24 +628,19 @@ const Budget = {
               const m = allMonths[mk];
               const total = m.expenses;
               return `<tr>
-                <td style="font-weight:600">${Utils.formatMonth(mk + '-01')}</td>
+                <td style="font-weight:500;color:var(--text)">${Utils.formatMonth(mk + '-01')}</td>
                 ${expenseCategories.map(c => {
                   const amt = m.byCategory[c] || 0;
-                  const pct = total > 0 ? (amt / total * 100).toFixed(1) : 0;
-                  return `<td style="text-align:right;font-size:0.82rem">
-                    ${amt > 0 ? `${Utils.formatCurrency(amt)}<br><span style="color:var(--text-muted)">${pct}%</span>` : '—'}
+                  const pct = total > 0 ? (amt / total * 100).toFixed(0) : 0;
+                  return `<td style="text-align:right;font-size:0.78rem">
+                    ${amt > 0 ? `${Utils.formatCurrency(amt)} <span style="color:var(--text-muted)">${pct}%</span>` : '<span style="color:var(--border)">—</span>'}
                   </td>`;
                 }).join('')}
-                <td style="text-align:right;font-weight:600">${Utils.formatCurrency(total)}</td>
+                <td style="text-align:right;font-weight:500;color:var(--text)">${Utils.formatCurrency(total)}</td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
-      </div>
-
-      <h3 style="margin:28px 0 16px;font-size:1rem">Aggregate % by Category</h3>
-      <div class="card" style="padding:24px">
-        <canvas id="chart-category-pie" height="300"></canvas>
       </div>
     `;
 
@@ -626,7 +666,7 @@ const Budget = {
       options: {
         responsive: true,
         plugins: {
-          legend: { position: 'right', labels: { color: '#e4e4e7', padding: 12, font: { size: 12 } } },
+          legend: { display: false },
           tooltip: {
             callbacks: {
               label: (ctx) => {
@@ -716,86 +756,93 @@ const Fire = {
       runningNW -= m.net; // subtract that month's net to estimate previous month
     }
 
+    const pctToFire = Math.min((netWorth / fireNumber) * 100, 100);
+
     container.innerHTML = `
+      <div class="card" style="margin-bottom:16px;padding:24px;text-align:center">
+        <div id="fire-countdown" style="font-size:1.6rem;font-weight:600;color:var(--accent);letter-spacing:-0.5px"></div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">until financial independence</div>
+        <div style="margin-top:16px;max-width:400px;margin-left:auto;margin-right:auto">
+          <div class="progress-track" style="height:8px">
+            <div class="progress-fill" style="width:${pctToFire.toFixed(1)}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px">${pctToFire.toFixed(1)}% of FIRE goal reached</div>
+        </div>
+      </div>
+
       <div class="cards-grid">
         <div class="card">
           <div class="card-label">FIRE Number</div>
           <div class="card-value" style="color:var(--accent)">${Utils.formatCurrency(fireNumber)}</div>
-          <div class="card-sub">${annualExpensesRetirement > annualExpenses ? 'Based on projected retirement expenses (+' + settings.expenseGrowth + '%)' : 'Based on current annual expenses'}</div>
+          <div class="card-sub">Retirement expenses +${settings.expenseGrowth}% &times; ${(1 / (settings.safeWithdrawalRate / 100)).toFixed(0)}x</div>
         </div>
         <div class="card">
-          <div class="card-label">Current Net Worth</div>
+          <div class="card-label">Net Worth</div>
           <div class="card-value ${netWorth >= 0 ? 'positive' : 'negative'}">${Utils.formatCurrency(netWorth)}</div>
-          <div class="card-sub">${((netWorth / fireNumber) * 100).toFixed(1)}% of FIRE goal</div>
         </div>
         <div class="card">
           <div class="card-label">Years to FIRE</div>
           <div class="card-value" style="color:var(--yellow)">${yearsToFire}</div>
-          <div class="card-sub">Target: ${fireYear} (age ${fireAgeCalc})</div>
+          <div class="card-sub">${fireYear} &middot; age ${fireAgeCalc}</div>
         </div>
         <div class="card">
           <div class="card-label">Monthly Savings</div>
           <div class="card-value positive">${Utils.formatCurrency(monthlySavings)}</div>
-          <div class="card-sub">Savings rate: ${totalAnnualIncome > 0 ? (annualSavings / totalAnnualIncome * 100).toFixed(1) : 0}%</div>
+          <div class="card-sub">${totalAnnualIncome > 0 ? (annualSavings / totalAnnualIncome * 100).toFixed(1) : 0}% savings rate</div>
         </div>
       </div>
 
       <div class="cards-grid" style="grid-template-columns: 1fr 1fr 1fr">
         <div class="card">
-          <div class="card-label">Annual Expenses (Current)</div>
-          <div class="card-value" style="font-size:1.2rem;color:var(--red)">${Utils.formatCurrency(annualExpenses)}</div>
-          <div class="card-sub">Derived from ${monthKeys.length} months of data</div>
+          <div class="card-label">Annual Expenses</div>
+          <div class="card-value" style="font-size:1.1rem;color:var(--red)">${Utils.formatCurrency(annualExpenses)}</div>
+          <div class="card-sub">From ${monthKeys.length} months of data</div>
         </div>
         <div class="card">
-          <div class="card-label">Annual Regular Income</div>
-          <div class="card-value" style="font-size:1.2rem;color:var(--green)">${Utils.formatCurrency(annualRegularIncome)}</div>
-          <div class="card-sub">Semi-monthly pay (2x/month)</div>
+          <div class="card-label">Regular Income</div>
+          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(annualRegularIncome)}</div>
+          <div class="card-sub">Semi-monthly &times; 12</div>
         </div>
         <div class="card">
-          <div class="card-label">Annual Bonus (Annualized)</div>
-          <div class="card-value" style="font-size:1.2rem;color:var(--green)">${Utils.formatCurrency(annualBonusIncome)}</div>
-          <div class="card-sub">From March 2026 bonus, annualized</div>
+          <div class="card-label">Bonus (Annualized)</div>
+          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(annualBonusIncome)}</div>
+          <div class="card-sub">March 2026 bonus</div>
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px;padding:24px">
-        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:16px">Net Worth: Historical & Projected to FIRE</h3>
+      <div class="card" style="margin-top:12px;padding:24px">
+        <div class="section-label">Net worth projection</div>
         <canvas id="chart-fire" height="120"></canvas>
       </div>
 
-      <div class="card" style="margin-top:20px;padding:20px">
-        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:16px">FIRE Settings</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
+      <div class="card" style="margin-top:12px;padding:20px">
+        <div class="section-label">Settings</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
           <div class="form-group">
             <label>Current Age</label>
             <input type="number" id="fire-age" value="${settings.currentAge}" onchange="Fire.saveSettings()">
           </div>
           <div class="form-group">
-            <label>Target FIRE Age</label>
+            <label>FIRE Age</label>
             <input type="number" id="fire-target-age" value="${settings.fireAge}" onchange="Fire.saveSettings()">
           </div>
           <div class="form-group">
-            <label>Expected Return (%)</label>
+            <label>Return %</label>
             <input type="number" id="fire-return" value="${settings.returnRate}" step="0.5" onchange="Fire.saveSettings()">
           </div>
           <div class="form-group">
-            <label>Inflation Rate (%)</label>
+            <label>Inflation %</label>
             <input type="number" id="fire-inflation" value="${settings.inflationRate}" step="0.5" onchange="Fire.saveSettings()">
           </div>
           <div class="form-group">
-            <label>Safe Withdrawal Rate (%)</label>
+            <label>SWR %</label>
             <input type="number" id="fire-swr" value="${settings.safeWithdrawalRate}" step="0.25" onchange="Fire.saveSettings()">
           </div>
           <div class="form-group">
-            <label>Expense Growth for Retirement (%)</label>
+            <label>Expense Growth %</label>
             <input type="number" id="fire-expense-growth" value="${settings.expenseGrowth}" step="0.5" onchange="Fire.saveSettings()">
           </div>
         </div>
-      </div>
-
-      <div class="card" style="margin-top:20px;padding:20px;background:var(--surface)">
-        <h3 style="font-size:0.9rem;color:var(--text-muted);margin-bottom:8px">FIRE Countdown</h3>
-        <div id="fire-countdown" style="font-size:2rem;font-weight:700;color:var(--accent);text-align:center;padding:16px"></div>
       </div>
     `;
 
@@ -879,32 +926,32 @@ const Fire = {
         labels: allLabels,
         datasets: [
           {
-            label: 'Historical Net Worth',
+            label: 'Historical',
             data: historicalLine,
-            borderColor: '#6366f1',
-            backgroundColor: '#6366f120',
+            borderColor: '#a78bfa',
+            backgroundColor: '#a78bfa10',
             fill: true,
-            tension: 0.3,
-            pointRadius: 2,
-            borderWidth: 2
+            tension: 0.35,
+            pointRadius: 1.5,
+            borderWidth: 1.5
           },
           {
-            label: 'Projected Net Worth',
+            label: 'Projected',
             data: projectedLine,
-            borderColor: '#22c55e',
-            backgroundColor: '#22c55e10',
-            borderDash: [6, 3],
+            borderColor: '#4ade80',
+            backgroundColor: '#4ade8008',
+            borderDash: [5, 3],
             fill: true,
-            tension: 0.3,
+            tension: 0.35,
             pointRadius: 0,
-            borderWidth: 2
+            borderWidth: 1.5
           },
           {
             label: 'FIRE Target',
             data: fireTarget.slice(0, allLabels.length),
-            borderColor: '#ef4444',
-            borderDash: [10, 5],
-            borderWidth: 1.5,
+            borderColor: '#f8717140',
+            borderDash: [8, 4],
+            borderWidth: 1,
             pointRadius: 0,
             fill: false
           }
@@ -914,15 +961,21 @@ const Fire = {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          x: { ticks: { color: '#8b8fa3', maxTicksLimit: 15 }, grid: { color: '#2a2e3d' } },
+          x: { ticks: { color: '#71717a', font: { size: 11 }, maxTicksLimit: 15 }, grid: { color: '#1e1e21' } },
           y: {
-            ticks: { color: '#8b8fa3', callback: v => Utils.formatCurrency(v) },
-            grid: { color: '#2a2e3d' }
+            ticks: { color: '#71717a', font: { size: 11 }, callback: v => Utils.formatCurrency(v) },
+            grid: { color: '#1e1e21' }
           }
         },
         plugins: {
-          legend: { labels: { color: '#e4e4e7', padding: 16 } },
+          legend: { labels: { color: '#a1a1aa', padding: 16, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
+            backgroundColor: '#18181b',
+            borderColor: '#27272a',
+            borderWidth: 1,
+            titleColor: '#fafafa',
+            bodyColor: '#a1a1aa',
+            padding: 10,
             callbacks: {
               label: ctx => ` ${ctx.dataset.label}: ${Utils.formatCurrency(ctx.raw)}`
             }
