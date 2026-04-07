@@ -179,7 +179,8 @@ const DB = {
     for (const t of txns) {
       if (t.type === 'income') {
         income += Math.abs(t.amount);
-      } else if (t.type === 'expense') {
+      } else if (t.type === 'expense' || (t.type === 'transfer' && t.category === 'Housing')) {
+        // Count Housing-categorized transfers (rent) as expenses
         expenses += Math.abs(t.amount);
         const cat = t.category || 'Other';
         byCategory[cat] = (byCategory[cat] || 0) + Math.abs(t.amount);
@@ -212,7 +213,7 @@ const DB = {
       if (!months[mk]) months[mk] = { income: 0, expenses: 0, byCategory: {} };
       if (t.type === 'income') {
         months[mk].income += Math.abs(t.amount);
-      } else if (t.type === 'expense') {
+      } else if (t.type === 'expense' || (t.type === 'transfer' && t.category === 'Housing')) {
         months[mk].expenses += Math.abs(t.amount);
         const cat = t.category || 'Other';
         months[mk].byCategory[cat] = (months[mk].byCategory[cat] || 0) + Math.abs(t.amount);
