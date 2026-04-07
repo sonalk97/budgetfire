@@ -79,9 +79,26 @@ const Dashboard = {
       }
     }
 
-    const avgMonthlyExpenses = completedMonthKeys.length > 0
-      ? completedMonthKeys.reduce((s, mk) => s + allMonths[mk].expenses, 0) / completedMonthKeys.length
-      : summary.expenses;
+    // Average monthly expenses + category breakdown
+    const excludeCats = new Set(['Income', 'Transfers', 'Investments']);
+    let avgMonthlyExpenses = 0;
+    const avgByCategory = {};
+    if (completedMonthKeys.length > 0) {
+      avgMonthlyExpenses = completedMonthKeys.reduce((s, mk) => s + allMonths[mk].expenses, 0) / completedMonthKeys.length;
+      for (const mk of completedMonthKeys) {
+        const m = allMonths[mk];
+        for (const [cat, amt] of Object.entries(m.byCategory)) {
+          if (excludeCats.has(cat)) continue;
+          avgByCategory[cat] = (avgByCategory[cat] || 0) + amt;
+        }
+      }
+      // Convert totals to averages
+      for (const cat of Object.keys(avgByCategory)) {
+        avgByCategory[cat] = avgByCategory[cat] / completedMonthKeys.length;
+      }
+    } else {
+      avgMonthlyExpenses = summary.expenses;
+    }
 
     const savingsRate = avgMonthlyIncome > 0 ? ((avgMonthlyIncome - avgMonthlyExpenses) / avgMonthlyIncome * 100) : 0;
 
@@ -90,6 +107,19 @@ const Dashboard = {
     document.getElementById('dash-income-label').textContent = incomeLabel;
     document.getElementById('dash-expenses').textContent = Utils.formatCurrency(avgMonthlyExpenses);
     document.getElementById('dash-savings-rate').textContent = savingsRate.toFixed(1) + '%';
+
+    // Render expense breakdown under the expenses card
+    const sortedAvgCats = Object.entries(avgByCategory).sort((a, b) => b[1] - a[1]);
+    const breakdownEl = document.getElementById('dash-expense-breakdown');
+    if (breakdownEl && sortedAvgCats.length > 0) {
+      breakdownEl.innerHTML = sortedAvgCats.map(([cat, amt]) => {
+        const pct = avgMonthlyExpenses > 0 ? (amt / avgMonthlyExpenses * 100).toFixed(0) : 0;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:0.78rem">
+          <span style="color:var(--text-secondary)">${cat}</span>
+          <span><span style="font-weight:500">${Utils.formatCurrency(amt)}</span> <span style="color:var(--text-muted)">${pct}%</span></span>
+        </div>`;
+      }).join('');
+    }
 
     const nwEl = document.getElementById('dash-net-worth');
     nwEl.className = 'card-value ' + (netWorth >= 0 ? 'positive' : 'negative');
