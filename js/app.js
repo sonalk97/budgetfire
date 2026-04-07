@@ -248,8 +248,10 @@ const Transactions = {
     container.innerHTML = `
       <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center">
         <button class="btn btn-sm btn-secondary" onclick="Transactions.recategorizeAll()">Auto-Categorize All</button>
+        <button class="btn btn-sm btn-secondary" onclick="Transactions.analyzeOther()">Analyze "Other"</button>
         <span style="color:var(--text-muted);font-size:0.82rem">${sorted.length} transactions</span>
       </div>
+      <div id="other-analysis"></div>
       <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Account</th><th>Amount</th><th></th></tr></thead>
       <tbody>${sorted.map(t => {
@@ -311,6 +313,60 @@ const Transactions = {
       // Learn from user override
       await Categorizer.learnFromOverride(description, newCategory);
     }
+  },
+
+  async analyzeOther() {
+    const txns = await DB.getTransactions();
+    const others = txns.filter(t => t.category === 'Other' || !t.category);
+    const container = document.getElementById('other-analysis');
+
+    if (others.length === 0) {
+      container.innerHTML = '<div class="card" style="margin-bottom:16px;padding:16px"><p style="color:var(--text-muted);font-size:0.85rem">No "Other" transactions found.</p></div>';
+      return;
+    }
+
+    // Word frequency analysis
+    const stopWords = new Set(['the','and','of','to','in','for','on','at','by','an','is','it','or','as','from','with','that','this','was','are','be','has','had','have','but','not','no','so','if','its','my','our','out','up','all','one','two','may','can','new','do','did']);
+    const wordCount = {};
+    const descCount = {};
+    for (const t of others) {
+      // Full description frequency
+      const desc = t.description.trim().toUpperCase();
+      descCount[desc] = (descCount[desc] || 0) + 1;
+
+      // Word frequency
+      const words = t.description.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/);
+      for (const w of words) {
+        if (w.length < 3 || stopWords.has(w)) continue;
+        wordCount[w] = (wordCount[w] || 0) + 1;
+      }
+    }
+
+    const topWords = Object.entries(wordCount).sort((a, b) => b[1] - a[1]).slice(0, 30);
+    const topDescs = Object.entries(descCount).sort((a, b) => b[1] - a[1]).slice(0, 25);
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:16px;padding:20px">
+        <div class="section-label">${others.length} transactions in "Other" — top recurring descriptions</div>
+        <div class="table-wrap" style="margin-bottom:16px">
+          <table>
+            <thead><tr><th>Description</th><th>Count</th><th>Sample Amount</th></tr></thead>
+            <tbody>${topDescs.map(([desc, count]) => {
+              const sample = others.find(t => t.description.trim().toUpperCase() === desc);
+              return `<tr>
+                <td style="font-size:0.8rem">${desc}</td>
+                <td>${count}</td>
+                <td>${sample ? Utils.formatCurrency(sample.amount) : ''}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+        <div class="section-label">Top words across all "Other" descriptions</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${topWords.map(([w, c]) => `<span style="background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:5px;padding:3px 10px;font-size:0.78rem"><strong>${w}</strong> <span style="color:var(--text-muted)">${c}</span></span>`).join('')}
+        </div>
+      </div>
+    `;
   },
 
   async recategorizeAll() {
@@ -702,14 +758,13 @@ const Fire = {
     const settings = (await DB.getSetting('fire')) || this.defaults;
 
     // Derive spending from data
-    const { monthlyExpenses, monthlyIncome, bonusIncome, regularIncome } = this._deriveFromData(allMonths, monthKeys);
+    const { monthlyExpenses, monthlyIncome, bonusIncome, regularIncome, bonusDetail } = this._deriveFromData(allMonths, monthKeys);
 
     // Calculate annualized values
     const annualExpenses = monthlyExpenses * 12;
     const annualExpensesRetirement = annualExpenses * (1 + settings.expenseGrowth / 100);
-    const annualRegularIncome = regularIncome * 12; // semi-monthly pay × 2 paychecks × 12
-    const annualBonusIncome = bonusIncome; // already annual
-    const totalAnnualIncome = annualRegularIncome + annualBonusIncome;
+    // regularIncome already includes prorated monthly bonus
+    const totalAnnualIncome = regularIncome * 12;
     const annualSavings = totalAnnualIncome - annualExpenses;
     const monthlySavings = annualSavings / 12;
 
@@ -796,17 +851,17 @@ const Fire = {
         <div class="card">
           <div class="card-label">Annual Expenses</div>
           <div class="card-value" style="font-size:1.1rem;color:var(--red)">${Utils.formatCurrency(annualExpenses)}</div>
-          <div class="card-sub">From ${monthKeys.length} months of data</div>
+          <div class="card-sub">Avg of ${monthKeys.length} months</div>
         </div>
         <div class="card">
-          <div class="card-label">Regular Income</div>
-          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(annualRegularIncome)}</div>
-          <div class="card-sub">Semi-monthly &times; 12</div>
+          <div class="card-label">Base Take-Home</div>
+          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(monthlyIncome * 12)}</div>
+          <div class="card-sub">${Utils.formatCurrency(monthlyIncome)}/mo semi-monthly</div>
         </div>
         <div class="card">
           <div class="card-label">Bonus (Annualized)</div>
-          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(annualBonusIncome)}</div>
-          <div class="card-sub">March 2026 bonus</div>
+          <div class="card-value" style="font-size:1.1rem;color:var(--green)">${Utils.formatCurrency(bonusIncome)}</div>
+          <div class="card-sub">${bonusDetail || '6mo pro-rated &times; 2'}</div>
         </div>
       </div>
 
@@ -852,31 +907,19 @@ const Fire = {
 
   _deriveFromData(allMonths, monthKeys) {
     if (monthKeys.length === 0) {
-      return { monthlyExpenses: 4000, monthlyIncome: 6000, bonusIncome: 0, regularIncome: 6000 };
+      return { monthlyExpenses: 4000, monthlyIncome: 8000, bonusIncome: 0, regularIncome: 8000, bonusDetail: '' };
     }
 
-    // Calculate average monthly expenses (excluding transfers/investments)
+    // Average monthly expenses from all months
     let totalExpenses = 0;
     let expenseMonths = 0;
-
-    // Separate regular income from bonus income
-    // March 2026 has a bonus — identify it as an outlier
-    let totalRegularIncome = 0;
-    let regularIncomeMonths = 0;
-    let bonusAmount = 0;
-
     for (const mk of monthKeys) {
-      const m = allMonths[mk];
-      totalExpenses += m.expenses;
+      totalExpenses += allMonths[mk].expenses;
       expenseMonths++;
-
-      if (mk === '2026-03') {
-        // March 2026 has bonus — find the median income of other months to isolate it
-        // We'll handle this after the loop
-      }
     }
 
-    // Calculate median income for non-March months to find regular pay
+    // Regular monthly take-home: median of non-March months
+    // User gets paid semi-monthly (2x/month), ~$8K post-tax total
     const nonBonusIncomes = [];
     for (const mk of monthKeys) {
       if (mk === '2026-03') continue;
@@ -884,24 +927,32 @@ const Fire = {
       if (m.income > 0) nonBonusIncomes.push(m.income);
     }
     nonBonusIncomes.sort((a, b) => a - b);
-    const medianIncome = nonBonusIncomes.length > 0
+    const regularMonthly = nonBonusIncomes.length > 0
       ? nonBonusIncomes[Math.floor(nonBonusIncomes.length / 2)]
-      : 0;
+      : 8000;
 
-    // Regular monthly income = median (represents 2 semi-monthly paychecks)
-    const regularMonthly = medianIncome;
-
-    // March 2026 bonus = March income minus regular monthly income
+    // March 2026 bonus calculation:
+    // Paycheck bonus = March income above regular monthly (~$8K)
+    // This represents the extra cash in the ~March 15 paycheck
     const marchIncome = allMonths['2026-03'] ? allMonths['2026-03'].income : 0;
-    bonusAmount = Math.max(0, marchIncome - regularMonthly);
+    const paycheckBonus = Math.max(0, marchIncome - regularMonthly);
+
+    // 401K bonus: ~$20K deposited to Fidelity in March on top of regular contributions
+    // User said this is reflected in the Fidelity 401K
+    // Combined: paycheck bonus + 401K bonus = 6-month bonus, annualize by multiplying by 2
+    const fidelityBonus = 20000; // approximate 401K bonus component
+    const sixMonthBonus = paycheckBonus + fidelityBonus;
+    const annualBonus = sixMonthBonus * 2;
+    const monthlyBonusContribution = annualBonus / 12;
 
     const monthlyExpenses = expenseMonths > 0 ? totalExpenses / expenseMonths : 0;
 
     return {
       monthlyExpenses,
       monthlyIncome: regularMonthly,
-      bonusIncome: bonusAmount, // This IS the annual bonus (one-time in March)
-      regularIncome: regularMonthly
+      bonusIncome: annualBonus,
+      regularIncome: regularMonthly + monthlyBonusContribution, // effective monthly income including prorated bonus
+      bonusDetail: `Paycheck bonus: ${Utils.formatCurrency(paycheckBonus)} + 401K: ${Utils.formatCurrency(fidelityBonus)} = ${Utils.formatCurrency(sixMonthBonus)} (6mo), annualized: ${Utils.formatCurrency(annualBonus)}`
     };
   },
 

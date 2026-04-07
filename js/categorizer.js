@@ -31,7 +31,7 @@ const Categorizer = {
     { keywords: ['movie', 'cinema', 'amc', 'regal', 'theater', 'theatre', 'concert', 'ticketmaster', 'stubhub', 'seatgeek', 'live nation', 'event', 'museum', 'zoo', 'aquarium', 'amusement', 'theme park', 'disneyland', 'disney world', 'universal', 'six flags', 'bowling', 'arcade', 'golf', 'ski', 'spa', 'massage', 'game', 'steam', 'playstation', 'xbox', 'nintendo', 'book', 'barnes', 'hobby'], category: 'Entertainment' },
 
     // Income
-    { keywords: ['payroll', 'direct dep', 'direct deposit', 'salary', 'wage', 'ach credit', 'employer', 'paycheck', 'tax refund', 'irs treas', 'interest paid', 'dividend', 'bonus', 'commission', 'freelance', 'venmo from', 'zelle from', 'cashapp from'], category: 'Income' },
+    { keywords: ['payroll', 'direct dep', 'direct deposit', 'salary', 'wage', 'ach credit', 'employer', 'paycheck', 'tax refund', 'irs treas', 'interest paid', 'dividend', 'bonus', 'commission', 'freelance', 'venmo from', 'zelle from', 'cashapp from', 'grosvenor', 'gcm'], category: 'Income' },
 
     // Transfers
     { keywords: ['transfer', 'xfer', 'ach', 'wire', 'zelle', 'venmo', 'cashapp', 'cash app', 'paypal', 'internal', 'savings transfer', 'checking transfer', 'payment thank', 'autopay', 'online payment', 'bill pay'], category: 'Transfers' },
