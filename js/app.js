@@ -612,12 +612,14 @@ const Budget = {
       return;
     }
 
-    // Aggregate totals across all time
+    // Aggregate totals across all time (spending categories only)
+    const excludeCats = new Set(['Income', 'Transfers', 'Investments']);
     const aggByCategory = {};
     let aggTotal = 0;
     for (const mk of monthKeys) {
       const m = allMonths[mk];
       for (const [cat, amt] of Object.entries(m.byCategory)) {
+        if (excludeCats.has(cat)) continue;
         aggByCategory[cat] = (aggByCategory[cat] || 0) + amt;
         aggTotal += amt;
       }
@@ -625,7 +627,7 @@ const Budget = {
 
     // Sort categories by total spend
     const sortedCats = Object.entries(aggByCategory).sort((a, b) => b[1] - a[1]);
-    const expenseCategories = CATEGORIES.filter(c => c !== 'Income' && c !== 'Transfers' && c !== 'Investments');
+    const expenseCategories = CATEGORIES.filter(c => !excludeCats.has(c));
 
     // Build monthly table data
     const currentMK = Utils.getCurrentMonthKey();
