@@ -1073,7 +1073,7 @@ const Fire = {
 
 // === Categories list ===
 const CATEGORIES = [
-  'Housing', 'Utilities', 'Groceries', 'Dining', 'Transportation',
+  'Housing', 'Utilities', 'Groceries', 'Dining', 'Travel', 'Transportation',
   'Subscriptions', 'Shopping', 'Healthcare', 'Entertainment',
   'Income', 'Transfers', 'Investments', 'Other'
 ];
